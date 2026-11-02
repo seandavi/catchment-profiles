@@ -3,7 +3,7 @@ import {
   summarize, summarizeTracts, tractCoverage, pickMapKey, formatNumber, formatCell, statusLabel, periodLabel, toCsv,
 } from './lib.js';
 import { SECTIONS } from './config.js';
-import { openDb, tableUrl } from './db.js';
+import { openDb, registerBundled, tableUrl } from './db.js';
 import { loadTopology, catchmentGeometry } from './map.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -60,6 +60,7 @@ async function init() {
   const centerT = tableUrl(base, manifest, 'catchment', 'center');
   ctx.memberUrl = tableUrl(base, manifest, 'catchment', 'member').url;
   ctx.bundledCatchment = centerT.bundled;
+  if (centerT.bundled) await registerBundled();
   ctx.topology = loadTopology();
   ctx.topology.catch(() => {});
 
