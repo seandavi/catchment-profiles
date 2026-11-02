@@ -1,6 +1,6 @@
 import {
-  parseParams, dataBase, observationSql, sqlStr, sqlList, countyFips, stateGeoId, modalValue, median,
-  summarize, formatNumber, formatCell, statusLabel, periodLabel, toCsv,
+  parseParams, dataBase, customDataHost, httpUrl, observationSql, sqlStr, sqlList, countyFips, stateGeoId, modalValue, median,
+  summarize, summarizeTracts, tractCoverage, pickMapKey, formatNumber, formatCell, statusLabel, periodLabel, toCsv,
 } from './lib.js';
 import { SECTIONS } from './config.js';
 import { openDb, tableUrl } from './db.js';
@@ -21,7 +21,8 @@ const FACILITY_KINDS = {
 const AGG_WORDS = { median: 'median', sum: 'sum', pooled: 'pooled' };
 const perf = (window.__cp = { base, firstContentMs: null, doneMs: null });
 
-const ctx = { csv: [], mapModels: new Map(), runId: 0 };
+// mapWanted: the measure the URL asked for, or the user's last pick; kept until a section that has it loads.
+const ctx = { csv: [], mapModels: new Map(), runId: 0, mapWanted: params.map };
 
 function setStatus(text, isError = false) {
   const el = $('#status');
@@ -41,6 +42,12 @@ $('#theme').addEventListener('click', () => {
 
 // ---------- release / centers ----------
 async function init() {
+  const customHost = customDataHost(base);
+  if (customHost) {
+    const banner = $('#data-banner');
+    banner.textContent = `Custom data source: ${customHost}`;
+    banner.hidden = false;
+  }
   setStatus('Loading Cancer Basemap release and DuckDB…');
   const manifestRes = fetch(new URL('manifest.json', base)).then((r) => {
     if (!r.ok) throw new Error(`manifest.json: HTTP ${r.status}`);
@@ -81,6 +88,13 @@ async function init() {
   }
 }
 
+// The center's website is linked only when it is an http(s) URL; any other text is shown as is.
+function centerLink(url) {
+  if (!url) return '';
+  const href = httpUrl(url);
+  return ` · ${href ? `<a href="${esc(href)}">center website</a>` : `website: ${esc(url)}`}`;
+}
+
 // ---------- one center ----------
 async function selectCenter(centerId) {
   const run = ++ctx.runId;
@@ -113,7 +127,7 @@ async function selectCenter(centerId) {
     WHERE center_id = ${sqlStr(centerId)}`))[0];
   $('#summary').innerHTML = `<h2>${esc(center.name)}</h2>
     <p>${esc(center.designation_type)} · ${esc(center.geo_description)} catchment · ${countyIds.length} counties,
-    mostly in ${esc(nameMap.get(stateId) ?? stateId)}${center.url ? ` · <a href="${esc(center.url)}">center website</a>` : ''}</p>`;
+    mostly in ${esc(nameMap.get(stateId) ?? stateId)}${centerLink(center.url)}</p>`;
   document.title = `${center.name} · Catchment Profiles`;
   setStatus(null);
 
@@ -180,8 +194,7 @@ function modelsFor(g, rows, refIds) {
     const byCounty = new Map();
     if (isTract) {
       for (const [fips, list] of Map.groupBy(cells, (r) => r.geo_id.slice(6, 11))) {
-        const s = summarize(list, 'median', list.length);
-        byCounty.set(fips, { value: s.value, value_status: s.status });
+        byCounty.set(fips, summarizeTracts(list));
       }
     } else {
       for (const r of cells) byCounty.set(countyFips(r.geo_id), r);
@@ -208,6 +221,12 @@ const fmt = (v, unit) => formatNumber(v, isPercent(unit) ? 1 : undefined) + (isP
 
 function valueCell(cell, unit) {
   return cell.value_status === 'reported' && cell.value != null ? fmt(cell.value, unit) : statusLabel(cell.value_status);
+}
+
+// Value text for the map tooltip and county table, with tract coverage when the county value comes from tracts.
+function countyText(cell, unit) {
+  const coverage = tractCoverage(cell);
+  return valueCell(cell, unit) + (coverage ? ` (${coverage})` : '');
 }
 
 function catchmentTd(m) {
@@ -353,12 +372,11 @@ async function drawMap(run) {
 
 function fillMapOptions() {
   const sel = $('#map-measure');
-  const current = sel.value || params.map;
   const byGroup = Map.groupBy([...ctx.mapModels.entries()], ([, m]) => `${m.group.title} (${m.group.source} ${m.group.release})`);
   sel.innerHTML = [...byGroup].map(([title, list]) => `<optgroup label="${esc(title)}">${list.map(([key, m]) =>
     `<option value="${esc(key)}">${esc(m.label)}</option>`).join('')}</optgroup>`).join('');
   const keys = [...ctx.mapModels.keys()];
-  sel.value = keys.find((k) => k === current) ?? keys.find((k) => k.split('|')[1] === current) ?? keys.find((k) => k.includes('|SCP:incidence:001|')) ?? keys[0] ?? '';
+  sel.value = pickMapKey(keys, ctx.mapWanted);
   paintMap();
 }
 
@@ -373,7 +391,7 @@ function paintMap() {
   for (const path of document.querySelectorAll('#map-svg path.county')) {
     const cell = m.byCounty.get(path.dataset.fips);
     const geoId = `county:${path.dataset.fips}`;
-    const text = cell ? valueCell(cell, m.unit) : statusLabel('missing');
+    const text = cell ? countyText(cell, m.unit) : statusLabel('missing');
     const reported = cell?.value_status === 'reported' && cell.value != null;
     path.style.fill = reported ? `color-mix(in srgb, var(--primary) ${hi > lo ? 12 + (88 * (cell.value - lo)) / (hi - lo) : 60}%, var(--panel))` : '';
     path.classList.toggle('na', !reported);
@@ -388,13 +406,16 @@ function paintMap() {
   const rows = ctx.countyIds.map((id) => {
     const cell = m.byCounty.get(countyFips(id));
     const o = ctx.overlap.get(id);
-    return `<tr><th scope="row">${esc(names(id))}</th><td class="num">${esc(cell ? valueCell(cell, m.unit) : statusLabel('missing'))}</td>
+    return `<tr><th scope="row">${esc(names(id))}</th><td class="num">${esc(cell ? countyText(cell, m.unit) : statusLabel('missing'))}</td>
       <td class="num">${o == null ? '' : `${(o * 100).toFixed(o < 0.995 ? 1 : 0)}%`}</td></tr>`;
   }).join('');
   $('#county-table').innerHTML = `<thead><tr><th scope="col">County</th><th scope="col">${esc(m.label)}</th><th scope="col">Share of county in catchment</th></tr></thead><tbody>${rows}</tbody>`;
 }
 
-$('#map-measure').addEventListener('change', paintMap);
+$('#map-measure').addEventListener('change', () => {
+  ctx.mapWanted = $('#map-measure').value;
+  paintMap();
+});
 
 // ---------- CSV downloads ----------
 document.addEventListener('click', (e) => {
@@ -412,10 +433,11 @@ document.addEventListener('click', (e) => {
     name = 'facility-summary';
   } else {
     const m = item.counties;
-    csv = toCsv(['county', 'geo_id', 'value', 'status', 'measure_id', 'source', 'source_release', 'period', 'cancer_basemap_release'],
+    csv = toCsv(['county', 'geo_id', 'value', 'status', 'tracts_reported', 'tracts_total', 'tracts_not_reported', 'measure_id', 'source', 'source_release', 'period', 'cancer_basemap_release'],
       ctx.countyIds.map((id) => {
         const c = m.byCounty.get(countyFips(id));
-        return [names(id), id, c?.value_status === 'reported' ? c.value : '', statusLabel(c?.value_status ?? 'missing'), m.measure.id, m.group.source, m.group.release, m.period, ctx.manifest.release];
+        return [names(id), id, c?.value_status === 'reported' ? c.value : '', statusLabel(c?.value_status ?? 'missing'),
+          c?.tracts?.k, c?.tracts?.n, Object.entries(c?.tracts?.notReported ?? {}).map(([s, n]) => `${s}:${n}`).join(';'), m.measure.id, m.group.source, m.group.release, m.period, ctx.manifest.release];
       }));
     name = `counties-${m.measure.id}`;
   }

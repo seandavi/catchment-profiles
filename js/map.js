@@ -3,7 +3,10 @@ import { feature, merge } from 'https://cdn.jsdelivr.net/npm/topojson-client@3.1
 
 const TOPOLOGY_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/counties-albers-10m.json';
 
-export const loadTopology = () => fetch(TOPOLOGY_URL).then((r) => {
+// sha384 of the pinned file; the fetch fails if the CDN serves anything else.
+const TOPOLOGY_INTEGRITY = 'sha384-+jWrHpHISEVoXDPAYJ39ZFxz1C1YqLIkLfSSHa3ZZ9K8bIqZ0hrMlct5/RmmSlp2';
+
+export const loadTopology = () => fetch(TOPOLOGY_URL, { integrity: TOPOLOGY_INTEGRITY }).then((r) => {
   if (!r.ok) throw new Error(`County boundaries: HTTP ${r.status}`);
   return r.json();
 });

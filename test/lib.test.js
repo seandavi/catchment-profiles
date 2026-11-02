@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseParams, dataBase, tablePath, observationSql, sqlStr, summarize, formatCell, statusLabel, toCsv, stateGeoId, modalValue, median, periodLabel,
+  customDataHost, httpUrl, summarizeTracts, tractCoverage, pickMapKey,
 } from '../js/lib.js';
 
 test('parseParams reads center, release, data, map', () => {
@@ -92,4 +93,57 @@ test('geo helpers', () => {
 
 test('toCsv quotes commas, quotes and newlines', () => {
   assert.equal(toCsv(['a', 'b'], [['x,y', 'say "hi"'], [null, 'l1\nl2']]), 'a,b\r\n"x,y","say ""hi"""\r\n,"l1\nl2"\r\n');
+});
+
+test('httpUrl links only http(s) URLs', () => {
+  assert.equal(httpUrl('https://cancer.example.org/a?b=1'), 'https://cancer.example.org/a?b=1');
+  assert.equal(httpUrl('http://cancer.example.org/'), 'http://cancer.example.org/');
+  assert.equal(httpUrl('javascript:alert(1)'), null);
+  assert.equal(httpUrl('data:text/html,<script>1</script>'), null);
+  assert.equal(httpUrl('www.cancer.example.org'), null);
+});
+
+test('customDataHost is null for the default data host and the host otherwise', () => {
+  assert.equal(customDataHost(dataBase({})), null);
+  assert.equal(customDataHost(dataBase({ release: '2026-11-02' })), null);
+  assert.equal(customDataHost('http://localhost:8799/'), 'localhost:8799');
+  assert.equal(customDataHost('https://evil.example/data/'), 'evil.example');
+});
+
+test('observationSql rejects a county FIPS that is not 5 digits and quotes the tract bounds', () => {
+  const args = (fips) => ['u', { source: 's', release: 'r', measureIds: ['m'], tractCountyFips: fips }];
+  assert.throws(() => observationSql(...args(["08031' OR 1=1 --"])), /5-digit/);
+  assert.throws(() => observationSql(...args(['8031'])), /5-digit/);
+  assert.match(observationSql(...args(['08059', '08031'])), /geo_id BETWEEN 'tract:08031' AND 'tract:08059~'/);
+});
+
+test('summarizeTracts keeps reported/total tracts and the non-reported statuses with the county value', () => {
+  const tracts = [
+    { value: 10, value_status: 'reported' }, { value: 30, value_status: 'reported' },
+    { value: null, value_status: 'suppressed_small_count' }, { value: null, value_status: 'suppressed_small_count' },
+    { value: null, value_status: 'not_available' }, { value: 20, value_status: 'reported' },
+  ];
+  const c = summarizeTracts(tracts);
+  assert.deepEqual(c, { value: 20, value_status: 'reported', tracts: { k: 3, n: 6, notReported: { suppressed_small_count: 2, not_available: 1 } } });
+  assert.equal(tractCoverage(c), 'median of 3 of 6 tracts reported; 2 Suppressed (small count), 1 Not available');
+  assert.equal(tractCoverage({ value: 5, value_status: 'reported' }), '');
+});
+
+test('a county with no reported tract shows its status, never a number', () => {
+  const c = summarizeTracts([{ value: 9, value_status: 'suppressed_small_count' }, { value: null, value_status: 'suppressed_small_count' }]);
+  assert.equal(c.value, null);
+  assert.equal(c.value_status, 'suppressed_small_count');
+  assert.equal(formatCell(c), 'Suppressed (small count)');
+  assert.equal(tractCoverage(c), '0 of 2 tracts reported; 2 Suppressed (small count)');
+});
+
+test('pickMapKey keeps the requested measure until its section loads, then selects it', () => {
+  const burden = ['burden|SCP:incidence:001|', 'burden|SCP:incidence:047|'];
+  const places = 'places|PLACES:CSMOKING:age_adjusted|';
+  assert.equal(pickMapKey(burden, 'PLACES:CSMOKING:age_adjusted'), burden[0]); // not loaded yet: default
+  assert.equal(pickMapKey([...burden, places], 'PLACES:CSMOKING:age_adjusted'), places); // loaded: by measure id
+  assert.equal(pickMapKey([...burden, places], places), places); // by full key
+  assert.equal(pickMapKey([...burden, places], burden[1]), burden[1]); // the user chose another measure
+  assert.equal(pickMapKey([places], null), places);
+  assert.equal(pickMapKey([], 'x'), '');
 });

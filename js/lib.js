@@ -29,6 +29,20 @@ export function dataBase({ release, data }) {
   return `${LIVE_DATA}latest/`;
 }
 
+// Host to warn about when ?data= points somewhere other than the default data host, else null.
+export function customDataHost(base) {
+  const host = new URL(base).host;
+  return host === new URL(LIVE_DATA).host ? null : host;
+}
+
+// A center URL from the data is only linked when it is http(s); anything else (javascript:, data:) is shown as text.
+export function httpUrl(value) {
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null;
+  } catch { return null; }
+}
+
 export function tablePath(manifest, schema, table) {
   return manifest.tables?.find((t) => t.schema === schema && t.table === table)?.path ?? null;
 }
@@ -47,9 +61,10 @@ export function observationSql(url, { source, release, measureIds, strata, geoId
   ];
   if (strata?.length) where.push(`stratum_id IN (${sqlList(strata)})`);
   if (tractCountyFips) {
+    for (const f of tractCountyFips) if (!/^\d{5}$/.test(f)) throw new Error(`Not a 5-digit county FIPS: ${f}`);
     // The BETWEEN lets Parquet min/max statistics skip row groups; the substr keeps only this catchment's counties.
     const sorted = [...tractCountyFips].sort();
-    where.push(`geo_id BETWEEN 'tract:${sorted[0]}' AND 'tract:${sorted.at(-1)}~'`,
+    where.push(`geo_id BETWEEN ${sqlStr(`tract:${sorted[0]}`)} AND ${sqlStr(`tract:${sorted.at(-1)}~`)}`,
       `substr(geo_id, 7, 5) IN (${sqlList(tractCountyFips)})`);
   }
   else where.push(`geo_id IN (${sqlList(geoIds)})`);
@@ -104,6 +119,30 @@ export function summarize(cells, agg, expected) {
     out.agg = 'median';
   }
   return out;
+}
+
+// A county's value derived from its tracts: the median of the reported tracts, with how many of the tracts
+// reported and the non-reported statuses (a county with no reported tract carries its status, never a number).
+export function summarizeTracts(tracts) {
+  const s = summarize(tracts, 'median', tracts.length);
+  const notReported = {};
+  for (const t of tracts) if (!isReported(t)) notReported[t.value_status] = (notReported[t.value_status] ?? 0) + 1;
+  return { value: s.value, value_status: s.status, tracts: { k: s.k, n: s.n, notReported } };
+}
+
+// 'median of 4 of 6 tracts reported; 2 Suppressed (small count)' for a county derived from tracts, else ''.
+export function tractCoverage(cell) {
+  const t = cell?.tracts;
+  if (!t) return '';
+  const missing = Object.entries(t.notReported).map(([status, n]) => `${n} ${statusLabel(status)}`).join(', ');
+  return `${t.k ? 'median of ' : ''}${t.k} of ${t.n} tracts reported${missing ? `; ${missing}` : ''}`;
+}
+
+// Which map measure to select: the requested one (a full key, or a measure id) once its section has loaded,
+// else the default, else the first. The caller keeps `wanted` until the user picks something else.
+export function pickMapKey(keys, wanted) {
+  return keys.find((k) => k === wanted) ?? keys.find((k) => k.split('|')[1] === wanted)
+    ?? keys.find((k) => k.split('|')[1] === 'SCP:incidence:001') ?? keys[0] ?? '';
 }
 
 // digits: fixed decimals (percentages); by default fewer decimals for bigger numbers.

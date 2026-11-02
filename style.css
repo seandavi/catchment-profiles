@@ -38,6 +38,7 @@ button:hover { border-color: var(--primary); }
 .picker select { min-width: 280px; max-width: 100%; }
 
 #status { padding: 8px 12px; border-left: 4px solid var(--primary); background: var(--panel); }
+#data-banner { margin: 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--panel); font-weight: 600; }
 #status.error, .error { border-left-color: var(--accent); color: var(--accent); }
 
 .tbl { margin: 12px 0; }
