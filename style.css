@@ -1,0 +1,75 @@
+/* Glacier / ember. Text colors keep >= 4.5:1 against both canvas and panel in each theme. */
+:root {
+  --canvas: #f8fafc; --panel: #ffffff; --ink: #0f172a; --muted: #475569; --line: #cbd5e1;
+  --primary: #0369a1; --accent: #c2410c; --ctx: #e2e8f0; --focus: #0369a1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0b1220; --panel: #111a2e; --ink: #e6edf7; --muted: #9fb0c9; --line: #26334d;
+    --primary: #38bdf8; --accent: #fb923c; --ctx: #17233b; --focus: #38bdf8;
+  }
+}
+:root[data-theme="dark"] {
+  --canvas: #0b1220; --panel: #111a2e; --ink: #e6edf7; --muted: #9fb0c9; --line: #26334d;
+  --primary: #38bdf8; --accent: #fb923c; --ctx: #17233b; --focus: #38bdf8;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--primary); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 8px; top: 8px; background: var(--panel); padding: 8px; z-index: 10; }
+
+header, main, footer { max-width: 1100px; margin: 0 auto; padding: 16px; }
+header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 3px solid var(--accent); }
+h1 { margin: 0; font-size: 1.6rem; color: var(--primary); }
+h2 { margin: 0 0 4px; font-size: 1.3rem; }
+h3 { margin: 0; font-size: 1rem; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; }
+.intro, .muted, .sub { color: var(--muted); }
+.sub { display: block; font-size: 0.8rem; font-weight: 400; }
+p { margin: 4px 0 8px; }
+
+button, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--muted); border-radius: 6px; padding: 6px 10px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--primary); }
+.picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.picker select { min-width: 280px; max-width: 100%; }
+
+#status { padding: 8px 12px; border-left: 4px solid var(--primary); background: var(--panel); }
+#status.error, .error { border-left-color: var(--accent); color: var(--accent); }
+
+.tbl { margin: 12px 0; }
+.tbl-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { padding: 6px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+thead th { background: var(--canvas); position: sticky; top: 0; }
+th.grp { border-left: 1px solid var(--line); }
+td.num, td.period { font-variant-numeric: tabular-nums; }
+td.num .v { font-weight: 600; }
+td.num .sub { white-space: nowrap; }
+td.status { color: var(--muted); font-style: italic; }
+td.period { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+tbody tr:last-child > * { border-bottom: 0; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--primary); }
+
+.map svg { width: 100%; max-height: 560px; display: block; background: var(--canvas); border-radius: 6px; }
+.map path { vector-effect: non-scaling-stroke; }
+.map .ctx { fill: var(--ctx); stroke: var(--line); stroke-width: 0.5; }
+.map .county { stroke: var(--panel); stroke-width: 0.6; }
+.map .county.na { fill: var(--ctx); stroke: var(--muted); stroke-dasharray: 3 2; }
+.map .outline { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.legend { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.85rem; color: var(--muted); flex-wrap: wrap; }
+.ramp { width: 160px; height: 12px; border-radius: 3px; border: 1px solid var(--line);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 12%, var(--panel)), var(--primary)); }
+.na-key { width: 14px; height: 12px; background: var(--ctx); border: 1px dashed var(--muted); margin-left: 12px; }
+
+footer { color: var(--muted); font-size: 0.85rem; }
+code { background: var(--canvas); padding: 1px 4px; border-radius: 4px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+
+/* Placeholder height, so sections below the fold stay out of view (and unloaded) until scrolled to. */
+#sections section { min-height: 70vh; }
